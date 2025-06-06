@@ -15,7 +15,7 @@ This project implements a multi-instance monolithic distributed platform using G
 - Docker 20.10+
 - Docker Compose 1.29+
 - Golang 1.24+
-- Internet (In Iran)
+- VPN (In Iran)
 
 # Quick Start
 
