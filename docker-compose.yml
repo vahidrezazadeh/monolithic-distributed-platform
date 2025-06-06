@@ -1,0 +1,136 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  zookeeper:
+    image: bitnami/zookeeper:latest
+    ports:
+      - "2181:2181"
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    networks:
+      - app-network
+
+  kafka:
+    image: bitnami/kafka:latest
+    ports:
+      - "9092:9092"
+      - "9093:9093"  # پورت SSL
+    environment:
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - ALLOW_PLAINTEXT_LISTENER=no  # غیرفعال کردن PLAINTEXT
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,SSL:SSL
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://0.0.0.0:9092,SSL://0.0.0.0:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,SSL://kafka:9093
+      - KAFKA_CFG_SSL_KEYSTORE_LOCATION=/opt/kafka/ssl/kafka.keystore.jks
+      - KAFKA_CFG_SSL_KEYSTORE_PASSWORD=your_keystore_password
+      - KAFKA_CFG_SSL_KEY_PASSWORD=your_key_password
+      - KAFKA_CFG_SSL_TRUSTSTORE_LOCATION=/opt/kafka/ssl/kafka.truststore.jks
+      - KAFKA_CFG_SSL_TRUSTSTORE_PASSWORD=your_truststore_password
+    volumes:
+      - ./ssl:/opt/kafka/ssl  # فرض بر این است که گواهی‌ها در دایرکتوری ssl قرار دارند
+    depends_on:
+      - zookeeper
+    networks:
+      - app-network
+
+  app1:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    hostname: app1
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+      - "7946:7946"
+    environment:
+      - INSTANCE_ID=instance-1
+      - HTTP_PORT=8080
+      - GRPC_PORT=50051
+      - CLUSTER_PORT=7946
+      - REDIS_ADDRESS=redis:6379
+      - KAFKA_ADDRESS=kafka:9093  # استفاده از پورت SSL
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  app2:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    hostname: app2
+    ports:
+      - "8081:8080"
+      - "50052:50051"
+      - "7947:7946"
+    environment:
+      - INSTANCE_ID=instance-2
+      - HTTP_PORT=8080
+      - GRPC_PORT=50051
+      - CLUSTER_PORT=7946
+      - JOIN_ADDRESSES=app1:7946
+      - REDIS_ADDRESS=redis:6379
+      - KAFKA_ADDRESS=kafka:9093  # استفاده از پورت SSL
+    depends_on:
+      - app1
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  app3:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    hostname: app3
+    ports:
+      - "8082:8080"
+      - "50053:50051"
+      - "7948:7946"
+    environment:
+      - INSTANCE_ID=instance-3
+      - HTTP_PORT=8080
+      - GRPC_PORT=50051
+      - CLUSTER_PORT=7946
+      - JOIN_ADDRESSES=app1:7946
+      - REDIS_ADDRESS=redis:6379
+      - KAFKA_ADDRESS=kafka:9093  # استفاده از پورت SSL
+    depends_on:
+      - app1
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
